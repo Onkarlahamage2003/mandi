@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mandi Price Forecast — Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#F7F5EF; --ink:#20281F; --panel:#FFFFFF; --line:#DEDACB;
+    --green:#33513A; --green-soft:#E4EAE1; --amber:#C98A1F; --amber-soft:#F6E9D2;
+    --muted:#726E60; --danger:#A8452F;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#181A15; --ink:#EDE9DC; --panel:#21241D; --line:#34372C;
+      --green:#8FBF9B; --green-soft:#26301F; --amber:#E3A93B; --amber-soft:#332816;
+      --muted:#9A9686; --danger:#E08066;
+    }
+  }
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased;}
+  h1,.num{font-family:'Fraunces',Georgia,serif;}
+  .wrap{max-width:980px; margin:0 auto; padding:24px 18px 50px;}
+  header{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:18px; flex-wrap:wrap;}
+  header h1{font-size:1.4rem; font-weight:600; margin:0; letter-spacing:-0.01em;}
+  .badge{font-size:0.76rem; padding:4px 10px; border-radius:99px; font-weight:600; white-space:nowrap;}
+  .badge.live{background:var(--green-soft); color:var(--green);}
+  .badge.demo{background:var(--amber-soft); color:var(--amber);}
+  .controls{display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;}
+  select, input[type=text]{font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); font-size:0.92rem;}
+  select{min-width:170px;}
+  input[type=text]{width:150px;}
+  .hint{font-size:0.78rem; color:var(--muted); margin:0 0 18px;}
+  .grid{display:grid; grid-template-columns:1.1fr 1.4fr; gap:14px;}
+  @media (max-width:720px){ .grid{grid-template-columns:1fr;} }
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px;}
+  .label{font-size:0.78rem; color:var(--muted);}
+  .hero-price{display:flex; align-items:flex-end; gap:8px; margin:6px 0 2px;}
+  .hero-price .num{font-size:2.4rem; font-weight:500; line-height:1;}
+  .hero-price .unit{color:var(--muted); font-size:0.88rem; padding-bottom:5px;}
+  .stat-row{display:flex; gap:20px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); flex-wrap:wrap;}
+  .stat .num{font-size:1.05rem; font-weight:600;}
+  canvas{max-width:100%;}
+  .forecast-band{margin-top:16px; padding:14px; border-radius:12px; background:var(--amber-soft); border:1px solid var(--line);}
+  .forecast-range{display:flex; align-items:baseline; gap:8px;}
+  .forecast-range .num{font-size:1.5rem; font-weight:600; color:var(--amber);}
+  .confidence-bar{height:6px; border-radius:4px; background:var(--line); margin-top:10px; overflow:hidden;}
+  .confidence-fill{height:100%; background:var(--amber); border-radius:4px;}
+  .note{font-size:0.8rem; color:var(--muted); margin-top:8px; line-height:1.5;}
+  .error{padding:14px; border-radius:10px; background:var(--danger); color:#fff; font-size:0.88rem; display:none; margin-bottom:14px;}
+  .loading{font-size:0.85rem; color:var(--muted);}
+  button{font:inherit; padding:10px 16px; border-radius:10px; border:none; background:var(--green); color:#fff; font-weight:600; cursor:pointer; font-size:0.9rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Mandi Price Forecast</h1>
+    <span class="badge" id="statusBadge">⏳ checking…</span>
+  </header>
+
+  <div class="controls">
+    <select id="commoditySelect">
+      <option>Onion</option><option>Tomato</option><option>Potato</option>
+      <option>Wheat</option><option>Soyabean</option><option>Cotton</option>
+      <option>Banana</option><option>Mango</option>
+    </select>
+    <input type="text" id="stateInput" placeholder="State (optional)">
+    <input type="text" id="marketInput" placeholder="Market (optional)">
+    <select id="horizonSelect">
+      <option value="30">+1 month</option>
+      <option value="60" selected>+2 months</option>
+      <option value="90">+3 months</option>
+    </select>
+    <button id="goBtn">Update</button>
+  </div>
+  <p class="hint">Leave state/market blank to average across all reporting mandis for that commodity.</p>
+
+  <div class="error" id="errorBox"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Current modal price</div>
+      <div class="hero-price"><span class="num" id="curPrice">—</span><span class="unit">₹ / quintal</span></div>
+      <div class="label" id="asOf"></div>
+      <div class="stat-row">
+        <div class="stat"><div class="label">52-wk high</div><div class="num" id="hiPrice">—</div></div>
+        <div class="stat"><div class="label">52-wk low</div><div class="num" id="loPrice">—</div></div>
+        <div class="stat"><div class="label">Markets seen</div><div class="num" id="marketCount">—</div></div>
+      </div>
+      <div class="forecast-band">
+        <div class="label" id="forecastLabel">Expected range</div>
+        <div class="forecast-range"><span class="num" id="fcLow">—</span><span>–</span><span class="num" id="fcHigh">—</span><span class="unit">₹/quintal</span></div>
+        <div class="confidence-bar"><div class="confidence-fill" id="confFill" style="width:0%"></div></div>
+        <div class="note" id="fcNote"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label" style="margin-bottom:10px;">Recent price history</div>
+      <canvas id="priceChart" height="230"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmt = n => n==null ? '—' : '₹' + Math.round(n).toLocaleString('en-IN');
+let chart;
+
+async function loadData(){
+  const commodity = document.getElementById('commoditySelect').value;
+  const state = document.getElementById('stateInput').value.trim();
+  const market = document.getElementById('marketInput').value.trim();
+  const horizon = document.getElementById('horizonSelect').value;
+  const badge = document.getElementById('statusBadge');
+  const errorBox = document.getElementById('errorBox');
+  errorBox.style.display = 'none';
+  badge.textContent = '⏳ loading…'; badge.className='badge demo';
+
+  const params = new URLSearchParams({commodity, horizon});
+  if(state) params.set('state', state);
+  if(market) params.set('market', market);
+
+  try{
+    const res = await fetch('/api/price?' + params.toString());
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data.error || 'Request failed'); }
+    render(data);
+    badge.textContent = '🟢 Live from data.gov.in';
+    badge.className = 'badge live';
+  }catch(err){
+    errorBox.textContent = 'Could not load live data: ' + err.message;
+    errorBox.style.display = 'block';
+    badge.textContent = '⚪ No data';
+    badge.className = 'badge demo';
+  }
+}
+
+function render(data){
+  document.getElementById('curPrice').textContent = fmt(data.current_price);
+  document.getElementById('asOf').textContent = 'as of ' + (data.as_of || '—');
+  const prices = data.history.map(h=>h.price);
+  document.getElementById('hiPrice').textContent = fmt(Math.max(...prices));
+  document.getElementById('loPrice').textContent = fmt(Math.min(...prices));
+  document.getElementById('marketCount').textContent = (data.markets_included||[]).length || '—';
+
+  const fc = data.forecast;
+  if(fc){
+    document.getElementById('forecastLabel').textContent = 'Expected range around ' + fc.target_date;
+    document.getElementById('fcLow').textContent = fmt(fc.forecast_low);
+    document.getElementById('fcHigh').textContent = fmt(fc.forecast_high);
+    document.getElementById('confFill').style.width = '60%';
+    document.getElementById('fcNote').textContent = 'Blend of last-90-day trend and same calendar window one year ago.';
+  }
+
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  const styles = getComputedStyle(document.documentElement);
+  const green = styles.getPropertyValue('--green').trim();
+  const ink = styles.getPropertyValue('--ink').trim();
+  const line = styles.getPropertyValue('--line').trim();
+  const labels = data.history.map(h=>h.date.slice(5));
+  if(chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{label:data.commodity, data:prices, borderColor:green, backgroundColor:green+'22', fill:true, tension:0.25, pointRadius:0, borderWidth:2.5}]},
+    options:{ responsive:true,
+      plugins:{ legend:{position:'bottom', labels:{color:ink, font:{size:11}}} },
+      scales:{ x:{ticks:{color:ink, maxTicksLimit:8, font:{size:10}}, grid:{color:line}},
+               y:{ticks:{color:ink, font:{size:10}}, grid:{color:line}} } }
+  });
+}
+
+document.getElementById('goBtn').addEventListener('click', loadData);
+document.getElementById('commoditySelect').addEventListener('change', loadData);
+loadData();
+</script>
+</body>
+</html>
